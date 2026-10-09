@@ -1,0 +1,146 @@
+﻿<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>CityVeins</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#faf7f2;--card:#fff;--ink:#1d1b19;--mut:#6b655e;--line:#e7e0d6;--acc:#e8590c;--ok:#2b8a3e;--bad:#c92a2a;--warn:#e67700}
+@media(prefers-color-scheme:dark){:root{--bg:#17150f;--card:#221f19;--ink:#f3eee6;--mut:#a79f93;--line:#3a352c;--acc:#ff8a3d;--ok:#69db7c;--bad:#ff8787;--warn:#ffc078}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);gap:8px}
+header span{color:var(--acc)}#ctx{font-size:13px;color:var(--mut);flex:1;text-align:center}
+button,select{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer}
+button.p,button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+main{display:grid;grid-template-columns:1fr 420px;height:calc(100vh - 53px)}
+@media(max-width:850px){main{grid-template-columns:1fr;grid-template-rows:40vh auto;height:auto}#ctx{display:none}}
+#map{height:100%;min-height:280px}aside{overflow:auto;padding:12px}
+#tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pane{display:none}.pane.show{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink);font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center}small,.mut{color:var(--mut)}
+.bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+.tag{font-size:11px;padding:1px 8px;border-radius:99px;color:#fff}.best{background:var(--ok)}.worst{background:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:4px;border-bottom:1px solid var(--line);text-align:left}
+.alert{color:var(--warn)}.t{font-weight:600}
+</style></head><body>
+<header><b>City<span>Veins</span> ðŸ™ï¸</b><div id="ctx">Sign in to load city context</div><button id="auth" class="p">Sign in with Google</button></header>
+<main><div id="map"></div><aside>
+<div id="tabs"></div>
+
+<div class="pane" id="p-explore">
+ <div class="row" id="grp"></div>
+ <div class="row"><small>Max price</small><select id="bud"><option value="4">any</option><option value="1">$</option><option value="2">$$</option><option value="3">$$$</option></select></div>
+ <details class="card"><summary>What matters to me (weights)</summary><div id="wts"></div></details>
+ <div id="list"><small>Pick a category.</small></div>
+
+<div class="pane" id="p-compare"><div id="cmp"><small>Tick "compare" on 2-4 places in Explore.</small></div></div>
+
+<div class="pane" id="p-safety">
+ <div class="card"><div class="t">AI city guide</div><div id="ins"></div></div>
+ <div class="card"><div class="t">Safest route</div><small>Tap the map to set a destination.</small><div class="row"><button id="rt">Find route</button></div><div id="rtout"></div></div>
+ <div class="card"><div class="t">Verified feed</div><div id="feed"></div></div>
+</div>
+
+navigator.geolocation.getCurrentPosition(p=>{pos=[p.coords.latitude,p.coords.longitude];map.setView(pos,14);L.circleMarker(pos,{radius:7}).addTo(map);me&&boot()},()=>$("st").textContent="Allow location to use CityVeins.");
+
+navigator.geolocation.getCurrentPosition(p=>{pos=[p.coords.latitude,p.coords.longitude];map.setView(pos,14);L.circleMarker(pos,{radius:7}).addTo(map);me&&boot()},()=>$("st").textContent="Allow location to use CityVeins.");
+
+<div class="pane" id="p-plan">
+ <div class="row"><select id="hrs"><option>3</option><option selected>6</option><option>10</option></select><small>hours</small>
+ <select id="pb"><option value="low">budget</option><option value="mid" selected>mid</option><option value="high">splurge</option></select></div>
+ <input type="text" id="int" placeholder="interests: street food, temples, photographyâ€¦">
+ <div class="row"><button id="pl" class="p">Plan my day</button></div><div id="plan"></div>
+</div>
+
+<div class="pane" id="p-report">
+ <textarea id="txt" rows="3" placeholder="bro this momo stall is fireâ€¦ / road flooded near the flyover / toilets here are filthy"></textarea>
+ <div class="row"><button id="mic">ðŸŽ™ï¸ Voice</button><input type="file" id="file" accept="image/*,video/*,audio/*"><button class="p" id="send">Send</button></div>
+ <small id="st">Sign in to start.</small>
+</div>
+</aside></main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const CE={food:"ðŸœ",hidden_gem:"ðŸ’Ž",event:"ðŸŽ‰",traffic:"ðŸš—",flood:"ðŸŒŠ",weather:"â›ˆï¸",safety:"âš ï¸",civic_issue:"ðŸ› ï¸",cleanliness:"ðŸ§¼",other:"ðŸ“"};
+const GE={food:"ðŸœ",stay:"ðŸ›ï¸",attractions:"ðŸŽ¡",heritage:"ðŸ›ï¸"},DIMS={safety:"ðŸ›¡ï¸",cleanliness:"ðŸ§¼",affordability:"ðŸ’¸",rating:"â­",accessibility:"â™¿"};
+const auth=getAuth(initializeApp(await (await fetch("/api/config")).json()));
+const map=L.map("map").setView([20,0],2);L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"Â© OpenStreetMap"}).addTo(map);
+const LP=L.layerGroup().addTo(map),LH=L.layerGroup().addTo(map),LC=L.layerGroup().addTo(map),LR=L.layerGroup().addTo(map);
+let me=null,pos=null,dest=null,destM=null,rec=null,chunks=[],grp="food",pl=[],sel=new Map();
+const emoji=e=>L.divIcon({html:`<div style="font-size:22px">${e}</div>`,className:""});
+const ready=()=>me&&pos;
+async function api(p,o={}){const t=await me.getIdToken();const r=await fetch(p,{...o,headers:{Authorization:"Bearer "+t,...(o.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.status);return j}
+const pj=(p,b)=>api(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+const guard=f=>async(...a)=>{try{await f(...a)}catch(e){alert(e.message)}};
+
+// tabs
+const TABS={explore:"ðŸ§­ Explore",compare:"âš–ï¸ Compare",safety:"ðŸ›¡ï¸ Safety",culture:"ðŸ›ï¸ Culture",plan:"ðŸ—“ï¸ Plan",report:"ðŸŽ™ï¸ Report"};
+for(const k in TABS){const b=document.createElement("button");b.textContent=TABS[k];b.dataset.k=k;b.onclick=()=>show(k);$("tabs").appendChild(b)}
+function show(k){document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("show",p.id==="p-"+k));document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+ if(ready()){if(k==="safety")safety();if(k==="compare")compare()}}
+show("explore");
+// explore controls
+for(const g in GE){const b=document.createElement("button");b.textContent=GE[g]+" "+g;b.onclick=()=>{grp=g;explore()};$("grp").appendChild(b)}
+for(const k in DIMS)$("wts").insertAdjacentHTML("beforeend",`<div class="row"><span style="width:130px">${DIMS[k]} ${k}</span><input type="range" min="0" max="5" value="1" id="w_${k}"></div>`);
+$("wts").onchange=()=>explore();$("bud").onchange=()=>explore();
+
+navigator.geolocation.getCurrentPosition(p=>{pos=[p.coords.latitude,p.coords.longitude];map.setView(pos,14);L.circleMarker(pos,{radius:7}).addTo(map);me&&boot()},()=>$("st").textContent="Allow location to use CityVeins.");
+navigator.geolocation.getCurrentPosition(p=>{pos=[p.coords.latitude,p.coords.longitude];map.setView(pos,14);L.circleMarker(pos,{radius:7}).addTo(map);me&&boot()},()=>$("st").textContent="Allow location to use CityVeins.");
+map.on("click",e=>{dest=e.latlng;destM&&map.removeLayer(destM);destM=L.marker(dest).addTo(map)});
+$("auth").onclick=async()=>{try{if(me){await signOut(auth)}else{await signInWithPopup(auth,new GoogleAuthProvider())}}catch(e){console.error(e);$("st").textContent="Sign-in failed: "+(e.code||e.message)}};
+onAuthStateChanged(auth,u=>{me=u;$("auth").textContent=u?"Sign out":"Sign in with Google";$("st").textContent=u?"Ready.":"Sign in to start.";u&&pos&&boot()});
+const boot=guard(async()=>{const c=await api(`/api/context?lat=${pos[0]}&lon=${pos[1]}`);
+ $("ctx").innerHTML=`${c.temp_c}Â°C Â· rain ${c.precip_mm} mm Â· wind ${c.wind_kmh} km/h Â· ${c.hazards_nearby} hazard(s) near you`+c.alerts.map(a=>` Â· <span class="alert">âš  ${esc(a)}</span>`).join("");explore()});
+
+// ---- Explore
+const explore=guard(async()=>{if(!ready())return;const q=new URLSearchParams({lat:pos[0],lon:pos[1],group:grp,max_price:$("bud").value});
+ for(const k in DIMS)q.set("w_"+k,$("w_"+k).value);
+ $("list").innerHTML="<small>Loadingâ€¦</small>";pl=await api("/api/places?"+q);LP.clearLayers();
+ $("list").innerHTML=pl.map(p=>`<div class="card"><div class="row" style="margin:0"><span class="t">${GE[p.group]} ${esc(p.name)}</span>${p.tag?`<span class="tag ${p.tag}">${p.tag}</span>`:""}<span style="margin-left:auto" class="t">${p.overall}</span></div>
+ <div class="bar"><i style="width:${p.overall}%"></i></div>
+ <small>${Object.keys(DIMS).map(k=>DIMS[k]+p.scores[k]).join(" ")}</small>${p.blurb?`<br><small>${esc(p.blurb)}</small>`:""}
+ <div class="row" style="margin:4px 0 0"><label><input type="checkbox" data-id="${esc(p.id)}" ${sel.has(p.id)?"checked":""}> compare</label><small>${p.reports_nearby} citizen report(s) nearby${p.open===false?" Â· closed now":""}</small></div></div>`).join("")||"<small>Nothing found.</small>";
+ pl.forEach(p=>L.marker([p.lat,p.lon],{icon:emoji(GE[p.group])}).addTo(LP).bindPopup(`<b>${esc(p.name)}</b><br>Score ${p.overall}`))});
+$("list").onchange=e=>{const id=e.target.dataset.id;if(!id)return;const p=pl.find(x=>x.id===id);if(e.target.checked){if(sel.size>=4){e.target.checked=false;return}sel.set(id,p)}else sel.delete(id)};
+
+// ---- Compare
+const compare=guard(async()=>{const a=[...sel.values()];if(a.length<2){$("cmp").innerHTML='<small>Tick "compare" on 2-4 places in Explore.</small>';return}
+ $("cmp").innerHTML=`<table><tr><th></th>${a.map(p=>`<th>${esc(p.name)}</th>`).join("")}</tr>`+
+ Object.keys(DIMS).concat("overall").map(k=>`<tr><td>${DIMS[k]||"ðŸ†"} ${k}</td>${a.map(p=>{const v=k==="overall"?p.overall:p.scores[k];return`<td>${v}<div class="bar"><i style="width:${v}%"></i></div></td>`}).join("")}</tr>`).join("")+
+ `</table><div class="row"><button class="p" id="vd">AI verdict</button></div><div id="vout"></div><small>Safety &amp; cleanliness default to neutral when no citizen reports exist nearby.</small>`;
+ $("vd").onclick=guard(async()=>{const v=await pj("/api/compare",{places:a.map(p=>({name:p.name,scores:p.scores,overall:p.overall,reports_nearby:p.reports_nearby}))});
+  $("vout").innerHTML=`<div class="card"><b>ðŸ† ${esc(v.winner)}</b><br>${esc(v.summary)}<ul>${v.tradeoffs.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></div>`})});
+
+// ---- Safety
+const safety=guard(async()=>{const q=`lat=${pos[0]}&lon=${pos[1]}`;const rs=await api(`/api/reports?${q}&radius_km=5`);LH.clearLayers();
+ const col={flood:"#1971c2",traffic:"#e67700",safety:"#c92a2a",civic_issue:"#9c36b5"};
+ rs.forEach(r=>{if(col[r.category])L.circle([r.lat,r.lon],{radius:150,color:col[r.category],fillOpacity:.1+r.trust/400,weight:1}).addTo(LH);
+  L.marker([r.lat,r.lon],{icon:emoji(CE[r.category]||"ðŸ“")}).addTo(LH).bindPopup(`<b>${esc(r.title)}</b><br>${esc(r.summary)}<br>Trust ${r.trust}%`)});
+ $("feed").innerHTML=rs.sort((a,b)=>b.trust-a.trust).map(r=>`<div style="border-top:1px solid var(--line);padding:6px 0"><span class="t">${CE[r.category]||"ðŸ“"} ${esc(r.title)}</span><br><small>${r.trust>=75?"âœ… Verified":r.trust>=50?"ðŸŸ¡ Likely":"âšª Unverified"} ${r.trust}% Â· ${r.corroborations} corroborating Â· ${r.age_min} min ago</small></div>`).join("")||"<small>No reports nearby.</small>";
+ const i=await api(`/api/insights?${q}`);$("ins").innerHTML=`<p>${esc(i.headline)}</p>`+i.picks.map(p=>`<div><span class="t" style="color:var(--${p.kind==="avoid"?"bad":"ok"})">${p.kind==="go"?"âœ¨":p.kind==="avoid"?"ðŸš«":"ðŸ’¡"} ${esc(p.title)}</span><br><small>${esc(p.why)}</small></div>`).join("")});
+$("rt").onclick=guard(async()=>{if(!dest||!ready())return;const r=await pj("/api/route",{o_lat:pos[0],o_lon:pos[1],d_lat:dest.lat,d_lon:dest.lng});
+ LR.clearLayers();r.forEach(x=>L.polyline(x.path,{color:x.recommended?"#2b8a3e":"#999",weight:x.recommended?6:3}).addTo(LR));
+ $("rtout").innerHTML=r.map(x=>`<div>${x.recommended?"âœ… <b>Recommended</b>":"Alt"}: ${x.minutes} min (+${x.delay_min} traffic) Â· ${x.km} km Â· risk ${x.risk}</div>`).join("")});
+
+// ---- Culture
+$("cu").onclick=guard(async()=>{$("culture").innerHTML="<small>Loadingâ€¦</small>";const r=await api(`/api/heritage?lat=${pos[0]}&lon=${pos[1]}`);LC.clearLayers();
+ $("culture").innerHTML=r.map(c=>`<div class="card"><span class="t">ðŸ›ï¸ ${esc(c.title)}</span><br><i>${esc(c.tagline)}</i><br>${esc(c.why_visit)}<br><small>${esc(c.etiquette_or_tip)}</small></div>`).join("")||"<small>No landmarks found nearby.</small>";
+ r.forEach(c=>L.marker([c.lat,c.lon],{icon:emoji("ðŸ›ï¸")}).addTo(LC).bindPopup(`<b>${esc(c.title)}</b><br>${esc(c.tagline)}`))});
+
+// ---- Plan
+$("pl").onclick=guard(async()=>{if(!ready())return;$("plan").innerHTML="<small>Planningâ€¦</small>";
+ const p=await pj("/api/plan",{lat:pos[0],lon:pos[1],hours:+$("hrs").value,budget:$("pb").value,interests:$("int").value.split(",").map(s=>s.trim()).filter(Boolean)});
+ LR.clearLayers();L.polyline(p.stops.map(s=>[s.lat,s.lon]),{color:"#e8590c",dashArray:"6 6"}).addTo(LR);
+ p.stops.forEach((s,i)=>L.marker([s.lat,s.lon],{icon:emoji(i+1+"ï¸âƒ£")}).addTo(LR));
+ $("plan").innerHTML=`<p>${esc(p.summary)}</p><p class="alert">${esc(p.weather_note)}</p>`+p.stops.map((s,i)=>`<div class="card"><span class="t">${esc(s.time)} Â· ${esc(s.name)}</span> <small>${esc(s.cost_hint)}</small><br>${esc(s.why)}${s.safety_note?`<br><small class="alert">ðŸ›¡ï¸ ${esc(s.safety_note)}</small>`:""}</div>`).join("")+`<ul>${p.tips.map(t=>`<li>${esc(t)}</li>`).join("")}</ul>`});
+
+// ---- Report (text / photo / video / voice)
+$("send").onclick=guard(async()=>{if(!ready())return;const f=new FormData();f.append("text",$("txt").value);f.append("lat",pos[0]);f.append("lon",pos[1]);
+ const m=$("file").files[0]||(chunks.length&&new File(chunks,"v.webm",{type:chunks[0].type||"audio/webm"}));if(m)f.append("media",m);
+ $("st").textContent="Analysingâ€¦";const r=await api("/api/reports",{method:"POST",body:f});$("st").textContent=r.emergency||"Added: "+r.report.title;$("txt").value="";$("file").value="";chunks=[]});
+$("mic").onclick=async()=>{if(rec&&rec.state==="recording"){rec.stop();return}try{const s=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];rec=new MediaRecorder(s);
+ rec.ondataavailable=e=>chunks=[new Blob([e.data],{type:e.data.type})];rec.onstop=()=>{s.getTracks().forEach(t=>t.stop());$("mic").textContent="ðŸŽ™ï¸ Voice âœ“"};rec.start();$("mic").textContent="â¹ Stop"}catch{$("st").textContent="Mic blocked"}};
+</script></body></html>
