@@ -5,6 +5,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Hea
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import firebase_admin
+from firebase_admin import credentials
 from firebase_admin import auth as fb_auth
 from google.cloud import firestore
 from google import genai
@@ -12,7 +13,11 @@ from google.genai import types
 from schemas import Report, Insights
 from prompts import EXTRACT_SYSTEM, INSIGHT_SYSTEM
 
-firebase_admin.initialize_app()
+service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+if service_account_json:
+    firebase_admin.initialize_app(credentials.Certificate(json.loads(service_account_json)))
+else:
+    firebase_admin.initialize_app()
 db = firestore.Client()
 ai = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -176,4 +181,6 @@ async def safest_route(q: RouteReq, u=Depends(user)):
 import sys, explore
 app.include_router(explore.build_router(sys.modules[__name__]))
 
-app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

@@ -217,6 +217,27 @@ gcloud run deploy cityveins `
 
 Add the resulting Cloud Run URL to Firebase Authentication > Authorized domains. Use Secret Manager for production secrets instead of passing them directly on the command line.
 
+## Deploy to Vercel
+
+The repository includes `vercel.json`, `api/index.py`, and a root `requirements.txt` for Vercel's Python runtime. The Vercel deployment serves `frontend/index.html` and routes `/api/*` to the FastAPI function.
+
+In the Vercel project settings, add these environment variables for **Production**, **Preview**, and **Development**:
+
+```text
+GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID
+GCLOUD_PROJECT=YOUR_PROJECT_ID
+GEMINI_API_KEY=YOUR_GEMINI_KEY
+MAPS_API_KEY=YOUR_MAPS_KEY
+FIREBASE_WEB_CONFIG={"apiKey":"...","authDomain":"...","projectId":"YOUR_PROJECT_ID","storageBucket":"...","messagingSenderId":"...","appId":"..."}
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+```
+
+Create the service-account JSON in Google Cloud or Firebase, paste the complete JSON as the value of `FIREBASE_SERVICE_ACCOUNT_JSON`, and never commit that file. Vercel cannot read the local `application_default_credentials.json` file.
+
+After adding the variables, redeploy. If the function still returns `FUNCTION_INVOCATION_FAILED`, open Vercel > Deployments > Functions and inspect the runtime log. Missing `GEMINI_API_KEY`, invalid service-account JSON, missing project ID, and unavailable third-party APIs are startup or request configuration errors.
+
+Voice conversion requires `ffmpeg`. Cloud Run includes it through `backend/Dockerfile`; Vercel's serverless runtime does not guarantee an `ffmpeg` binary, so text, image, and video reports are the reliable Vercel paths.
+
 ## Publish to GitHub
 
 Initialize and commit the project:
